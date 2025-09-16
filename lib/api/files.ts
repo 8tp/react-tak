@@ -1,11 +1,28 @@
-import FormData from 'form-data';
 import type { ParsedArgs } from 'minimist'
-import { Readable } from 'node:stream';
 import mime from 'mime';
 import Commands, { CommandOutputFormat } from '../commands.js';
 import { TAKList } from './types.js';
 import { Type, Static } from '@sinclair/typebox';
 import { encodeUtf8 } from '../utils/encoding.js';
+
+// Lazy utilities to keep RN bundlers happy
+type Readable = import('node:stream').Readable;
+
+async function toReadable(body: Readable | Buffer): Promise<Readable> {
+    if (typeof Buffer !== 'undefined' && body instanceof Buffer) {
+        const stream = await import('node:stream');
+        return stream.Readable.from(body);
+    }
+    return body as Readable;
+}
+
+async function getFormDataCtor(): Promise<any> {
+    // Prefer global FormData (browser/RN)
+    if (typeof FormData !== 'undefined') return FormData as any;
+    // Fallback to Node's form-data package
+    const mod = await import('form-data');
+    return (mod as unknown as { default: any }).default;
+}
 
 export const Content = Type.Object({
   UID: Type.String(),
@@ -159,12 +176,11 @@ export default class FileCommands extends Commands {
             }
         }
 
-        if (body instanceof Buffer) {
-            body = Readable.from(body as Buffer);
-        }
+        const streamBody = await toReadable(body);
 
-        const form = new FormData()
-        form.append('assetfile', body as Readable);
+        const FormDataCtor = await getFormDataCtor();
+        const form = new FormDataCtor();
+        form.append('assetfile', streamBody);
 
         const res = await this.api.fetch(url, {
             method: 'POST',
@@ -196,9 +212,7 @@ export default class FileCommands extends Commands {
         if (opts.longitude) url.searchParams.append('longitude', opts.longitude);
         if (opts.latitude) url.searchParams.append('latitude', opts.latitude);
 
-        if (body instanceof Buffer) {
-            body = Readable.from(body as Buffer);
-        }
+        const streamBody = await toReadable(body);
 
         const res = await this.api.fetch(url, {
             method: 'POST',
@@ -206,7 +220,7 @@ export default class FileCommands extends Commands {
                 'Content-Type': opts.contentType ? opts.contentType : mime.getType(opts.name),
                 'Content-Length': opts.contentLength
             },
-            body: body as Readable
+            body: streamBody
         });
 
         return JSON.parse(res);

@@ -3,7 +3,7 @@ import type { ParsedArgs } from 'minimist'
 import CoT, { CoTParser } from '@tak-ps/node-cot';
 import { Type, Static } from '@sinclair/typebox';
 import Err from '@openaddresses/batch-error';
-import { Readable } from 'node:stream'
+import type { Readable } from 'node:stream'
 import { TAKItem, TAKList } from './types.js';
 import { MissionLog } from './mission-log.js';
 import type { Feature } from '@tak-ps/node-cot';
@@ -229,13 +229,13 @@ export default class MissionCommands extends Commands {
         return encodeURIComponent(name.trim())
     }
 
-    #headers(opts?: Static<typeof MissionOptions>): object {
+    #headers(opts?: Static<typeof MissionOptions>): Record<string, string> {
         if (opts && opts.token) {
             return {
                 MissionAuthorization: `Bearer ${opts.token}`
             }
         } else {
-            return {};
+            return {} as Record<string, string>;
         }
     }
 
@@ -250,7 +250,7 @@ export default class MissionCommands extends Commands {
     ): Promise<Readable> {
         const url = new URL(`/Marti/api/missions/${this.#encodeName(name)}/archive`, this.api.url);
 
-        const res = await this.api.fetch(url, {
+        const res: any = await this.api.fetch(url, {
             method: 'GET',
             headers: this.#headers(opts),
         }, true);
@@ -279,12 +279,10 @@ export default class MissionCommands extends Commands {
             }
         }
 
-        const changes = await this.api.fetch(url, {
+        return await this.api.fetch(url, {
             method: 'GET',
             headers: this.#headers(opts),
-        });
-
-        return changes;
+        }) as Static<typeof TAKList_MissionChange>;
     }
 
     /**
@@ -327,7 +325,7 @@ export default class MissionCommands extends Commands {
         return await this.api.fetch(url, {
             method: 'GET',
             headers: this.#headers(opts)
-        });
+        }) as string;
     }
 
     /**

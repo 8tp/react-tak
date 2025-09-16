@@ -1,8 +1,20 @@
 import Err from '@openaddresses/batch-error';
 import type { ParsedArgs } from 'minimist'
 import { Static, Type } from '@sinclair/typebox';
-import { randomUUID } from 'node:crypto';
 import Commands, { CommandOutputFormat } from '../commands.js';
+
+function createUUID(): string {
+    if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomUUID === 'function') {
+        return globalThis.crypto.randomUUID();
+    }
+    // RFC4122 version 4 compliant-ish fallback
+    // https://stackoverflow.com/a/2117523
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        const v = c === 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+    });
+}
 
 export const FeedInput = Type.Object({
     uuid: Type.Optional(Type.String()),
@@ -120,7 +132,7 @@ export default class VideoCommands extends Commands {
             body: {
                 ...connection,
                 feeds: connection.feeds.map((feed) => {
-                    if (!feed.uuid) feed.uuid = randomUUID();
+                    if (!feed.uuid) feed.uuid = createUUID();
                     return feed;
                 })
             }
@@ -134,7 +146,7 @@ export default class VideoCommands extends Commands {
     ): Promise<Static<typeof VideoConnection>> {
         const url = new URL(`/Marti/api/video`, this.api.url);
 
-        const uuid = connection.uuid || randomUUID();
+        const uuid = connection.uuid || createUUID();
 
         if (connection.groups) {
             for (const group of connection.groups) {
@@ -152,7 +164,7 @@ export default class VideoCommands extends Commands {
                     ...connection,
                     feeds: connection.feeds.map((feed) => {
                         return {
-                            uuid: randomUUID(),
+                            uuid: createUUID(),
                             ...feed,
                         }
                     })
