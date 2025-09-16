@@ -5,6 +5,7 @@ import mime from 'mime';
 import Commands, { CommandOutputFormat } from '../commands.js';
 import { TAKList } from './types.js';
 import { Type, Static } from '@sinclair/typebox';
+import { encodeUtf8 } from '../utils/encoding.js';
 
 export const Content = Type.Object({
   UID: Type.String(),
@@ -79,7 +80,7 @@ export default class FileCommands extends Commands {
         return body;
     }
 
-    async download(hash: string): Promise<Readable> {
+    async download(hash: string): Promise<Readable | Uint8Array> {
         const url = new URL(`/Marti/sync/content`, this.api.url);
         url.searchParams.append('hash', hash);
 
@@ -87,7 +88,19 @@ export default class FileCommands extends Commands {
             method: 'GET'
         }, true);
 
-        return res.body;
+        if (res.body instanceof Uint8Array) return res.body;
+
+        if (res.body) return res.body as Readable;
+
+        if (typeof res.arrayBuffer === 'function') {
+            return new Uint8Array(await res.arrayBuffer());
+        }
+
+        if (typeof res.text === 'function') {
+            return encodeUtf8(await res.text());
+        }
+
+        throw new Error('Unsupported response body type for download');
     }
 
     async adminDelete(hash: string) {

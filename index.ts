@@ -1,12 +1,12 @@
 import EventEmitter from 'node:events';
 import type { Static } from '@sinclair/typebox';
-import tls from 'node:tls';
 import CoT, { CoTParser } from '@tak-ps/node-cot';
 import type { CoTOptions } from '@tak-ps/node-cot';
-import type { TLSSocket } from 'node:tls'
 
 import TAKAPI from './lib/api.js';
 import { TAKAuth } from './lib/auth.js';
+import type { TAKTransport, TransportFactory } from './lib/transport/types.js';
+import { getDefaultTransportFactory } from './lib/transport/factory.js';
 export * from './lib/auth.js';
 
 /* eslint-disable no-control-regex */
@@ -14,6 +14,14 @@ export const REGEX_CONTROL = /[\u000B-\u001F\u007F-\u009F]/g;
 
 // Match <event .../> or <event> but not <events>
 export const REGEX_EVENT = /(<event[ >][\s\S]*?<\/event>)([\s\S]*)/
+
+function scheduleTask(cb: () => void): void {
+    if (typeof queueMicrotask === 'function') {
+        queueMicrotask(cb);
+    } else {
+        setTimeout(cb, 0);
+    }
+}
 
 export interface PartialCoT {
     event: string;
@@ -24,6 +32,7 @@ export type TAKOptions = {
     id?: number | string,
     type?: string,
     cot?: CoTOptions,
+    transportFactory?: TransportFactory,
 }
 
 export default class TAK extends EventEmitter {
@@ -38,8 +47,11 @@ export default class TAK extends EventEmitter {
 
     cotOptions: CoTOptions;
 
+    transportFactory: TransportFactory;
+    transport?: TAKTransport;
+    partialBuffer: string;
+
     pingInterval?: ReturnType<typeof setTimeout>;
-    client?: TLSSocket;
     version?: string;
 
     /**
@@ -74,6 +86,9 @@ export default class TAK extends EventEmitter {
         this.destroyed = false;
 
         this.queue = [];
+
+        this.transportFactory = opts.transportFactory ?? getDefaultTransportFactory();
+        this.partialBuffer = '';
     }
 
     static async connect(
@@ -92,114 +107,122 @@ export default class TAK extends EventEmitter {
         }
     }
 
-    connect_ssl(): Promise<TAK> {
-        return new Promise((resolve) => {
-            this.destroyed = false;
+    async connect_ssl(): Promise<TAK> {
+        this.destroyed = false;
+        this.open = false;
+        this.partialBuffer = '';
 
-            this.client = tls.connect({
-                host: this.url.hostname,
-                port: parseInt(this.url.port),
-                rejectUnauthorized: this.auth.rejectUnauthorized ?? false,
-                cert: this.auth.cert,
-                key: this.auth.key,
-                passphrase: this.auth.passphrase,
-                ca: this.auth.ca,
-            });
+        if (this.transport) {
+            this.transport.destroy();
+        }
 
-            this.client.setNoDelay();
+        const transport = await this.transportFactory({
+            url: this.url,
+            auth: this.auth
+        });
 
-            this.client.on('connect', () => {
-                console.error(`ok - ${this.id} @ connect:${this.client ? this.client.authorized : 'NO CLIENT'} - ${this.client ? this.client.authorizationError : 'NO CLIENT'}`);
-            });
+        this.transport = transport;
+        this.attachTransportHandlers(transport);
 
-            this.client.on('secureConnect', () => {
-                console.error(`ok - ${this.id} @ secure:${this.client ? this.client.authorized : 'NO CLIENT'} - ${this.client ? this.client.authorizationError : 'NO CLIENT'}`);
-                this.emit('secureConnect')
-                this.ping();
-            });
+        if (this.pingInterval) {
+            clearInterval(this.pingInterval);
+        }
 
-            let buff = '';
-            this.client.on('data', async (data: Buffer) => {
-                // Eventually Parse ProtoBuf
-                buff = buff + data.toString();
+        this.pingInterval = setInterval(() => {
+            void this.ping();
+        }, 5000);
 
-                let result = TAK.findCoT(buff);
-                while (result && result.event) {
-                    try {
-                        const cot = await CoTParser.from_xml(result.event, this.cotOptions);
+        await transport.connect();
 
-                        if (cot.raw.event._attributes.type === 't-x-c-t-r') {
-                            this.open = true;
-                            this.emit('ping');
-                        } else if (
-                            cot.raw.event._attributes.type === 't-x-takp-v'
-                            && cot.raw.event.detail
-                            && cot.raw.event.detail.TakControl
-                            && cot.raw.event.detail.TakControl.TakServerVersionInfo
-                            && cot.raw.event.detail.TakControl.TakServerVersionInfo._attributes
-                        ) {
-                            this.version = cot.raw.event.detail.TakControl.TakServerVersionInfo._attributes.serverVersion;
-                        } else {
-                            this.emit('cot', cot);
-                        }
-                    } catch (e) {
-                        console.error('Error parsing', e, data.toString());
-                    }
+        return this;
+    }
 
-                    buff = result.remainder;
-
-                    result = TAK.findCoT(buff);
-                }
-            }).on('timeout', () => {
+    private attachTransportHandlers(transport: TAKTransport): void {
+        transport.setHandlers({
+            connect: () => {
+                console.error(`ok - ${this.id} @ connect`);
+            },
+            secureConnect: () => {
+                console.error(`ok - ${this.id} @ secure`);
+                this.emit('secureConnect');
+                void this.ping();
+            },
+            data: (chunk: string) => {
+                void this.handleIncomingData(chunk);
+            },
+            timeout: () => {
                 this.emit('timeout');
-            }).on('error', (err: Error) => {
+            },
+            error: (err: Error) => {
                 this.emit('error', err);
-            }).on('end', () => {
+            },
+            end: () => {
                 this.open = false;
                 this.emit('end');
-            });
-
-            this.pingInterval = setInterval(() => {
-                this.ping();
-            }, 5000);
-
-            return resolve(this);
+            }
         });
     }
 
-    async reconnect(): Promise<void> {
-        if (this.destroyed) {
-            await this.connect_ssl();
-        } else {
-            this.destroy();
-            await this.connect_ssl();
+    private async handleIncomingData(chunk: string): Promise<void> {
+        this.partialBuffer = this.partialBuffer + chunk;
+
+        let result = TAK.findCoT(this.partialBuffer);
+        while (result && result.event) {
+            try {
+                const cot = await CoTParser.from_xml(result.event, this.cotOptions);
+
+                if (cot.raw.event._attributes.type === 't-x-c-t-r') {
+                    this.open = true;
+                    this.emit('ping');
+                } else if (
+                    cot.raw.event._attributes.type === 't-x-takp-v'
+                    && cot.raw.event.detail
+                    && cot.raw.event.detail.TakControl
+                    && cot.raw.event.detail.TakControl.TakServerVersionInfo
+                    && cot.raw.event.detail.TakControl.TakServerVersionInfo._attributes
+                ) {
+                    this.version = cot.raw.event.detail.TakControl.TakServerVersionInfo._attributes.serverVersion;
+                } else {
+                    this.emit('cot', cot);
+                }
+            } catch (e) {
+                console.error('Error parsing', e, chunk);
+            }
+
+            this.partialBuffer = result.remainder;
+            result = TAK.findCoT(this.partialBuffer);
         }
+    }
+
+    async reconnect(): Promise<void> {
+        this.destroy();
+        this.destroyed = false;
+        await this.connect_ssl();
     }
 
     destroy(): void {
         this.destroyed = true;
-        if (this.client) {
-            this.client.destroy();
+        if (this.transport) {
+            this.transport.destroy();
+            this.transport = undefined;
         }
 
         if (this.pingInterval) {
             clearInterval(this.pingInterval)
             this.pingInterval = undefined;
         }
+
+        this.partialBuffer = '';
     }
 
     async ping(): Promise<void> {
         this.write([CoT.ping()]);
     }
 
-    writer(body: string): Promise<boolean> {
-        return new Promise((resolve, reject) => {
-            if (!this.client) return reject(new Error('A Connection Client must first be created before it can be written'));
+    async writer(body: string): Promise<void> {
+        if (!this.transport) throw new Error('A Connection Client must first be created before it can be written');
 
-            const res: boolean = this.client.write(body + '\n', () => {
-                return resolve(res)
-            });
-        });
+        await this.transport.send(`${body}\n`);
     }
 
     async process(): Promise<void> {
@@ -213,8 +236,8 @@ export default class TAK extends EventEmitter {
         await this.writer('');
 
         if (this.queue.length) {
-            process.nextTick(() => {
-                this.process();
+            scheduleTask(() => {
+                void this.process();
             });
         } else {
             this.writing = false;
@@ -262,3 +285,8 @@ export {
     TAKAPI,
     CoT,
 }
+
+export type {
+    TAKTransport,
+    TransportFactory,
+} from './lib/transport/types.js';

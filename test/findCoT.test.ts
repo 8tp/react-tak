@@ -1,3 +1,4 @@
+import './setup.js';
 import TAK from '../index.js';
 import test from 'tape';
 

@@ -48,21 +48,24 @@ export default class OAuthCommands extends Commands {
 
         if (authres.status === 401) {
             throw new Err(400, new Error(text), 'TAK Server reports incorrect Username or Password');
-        } else if (!authres.ok) {
+        } else if (!(authres.ok ?? (authres.status >= 200 && authres.status < 300))) {
             throw new Err(400, new Error(`Status: ${authres.status}: ${text}`), 'Non-200 Response from Auth Server - Token');
         }
 
-        const body: any = JSON.parse(text);
+        const body = JSON.parse(text) as Record<string, unknown>;
+        const error = typeof body.error === 'string' ? body.error : undefined;
+        const errorDescription = typeof body.error_description === 'string' ? body.error_description : undefined;
+        const accessToken = typeof body.access_token === 'string' ? body.access_token : undefined;
 
-        if (body.error === 'invalid_grant' && body.error_description.startsWith('Bad credentials')) {
+        if (error === 'invalid_grant' && errorDescription && errorDescription.startsWith('Bad credentials')) {
             throw new Err(400, null, 'Invalid Username or Password');
-        } else if (body.error || !body.access_token) {
-            throw new Err(500, new Error(body.error_description), 'Unknown Login Error');
+        } else if (error || !accessToken) {
+            throw new Err(500, new Error(errorDescription ?? 'Unknown Error'), 'Unknown Login Error');
         }
 
         return {
-            token: body.access_token,
-            contents: this.parse(body.access_token)
+            token: accessToken,
+            contents: this.parse(accessToken)
         };
     }
 }

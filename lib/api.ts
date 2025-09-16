@@ -138,7 +138,7 @@ export default class TAKAPI {
                 opts.body = String(opts.body);
             }
 
-            const res = await this.auth.fetch(this, url, opts)
+            const res = await this.auth.fetch(this, url, opts);
 
             if (raw) return res;
 
