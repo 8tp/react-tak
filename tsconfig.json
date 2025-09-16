@@ -28,7 +28,9 @@
     },
     "include": [
         "cli.ts",
-        "index.ts", 
+        "index.ts",
+        "index.node.ts",
+        "index.native.ts",
         "test/**/*.ts",
         "lib/**/*.ts",
         "lib/schema.json",

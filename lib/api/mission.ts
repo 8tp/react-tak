@@ -9,6 +9,8 @@ import { MissionLog } from './mission-log.js';
 import type { Feature } from '@tak-ps/node-cot';
 import Commands, { CommandOutputFormat } from '../commands.js';
 
+type RawEvent = CoT['raw']['event'];
+
 export enum MissionSubscriberRole {
     MISSION_OWNER = 'MISSION_OWNER',
     MISSION_SUBSCRIBER = 'MISSION_SUBSCRIBER',
@@ -294,13 +296,16 @@ export default class MissionCommands extends Commands {
     ): Promise<Static<typeof Feature.Feature>[]> {
         const feats: Static<typeof Feature.Feature>[] = [];
 
-        const res: any = xmljs.xml2js(await this.latestCots(name, opts), { compact: true });
+        const raw = xmljs.xml2js(await this.latestCots(name, opts), { compact: true }) as Record<string, unknown>;
+        const eventsNode = raw.events as { event?: unknown } | undefined;
+        const eventValue = eventsNode?.event;
 
-        if (!Object.keys(res.events).length) return feats;
-        if (!res.events.event || (Array.isArray(res.events.event) && !res.events.event.length)) return feats;
+        if (!eventValue) return feats;
 
-        for (const event of Array.isArray(res.events.event) ? res.events.event : [res.events.event] ) {
-            feats.push(await CoTParser.to_geojson(new CoT({ event })));
+        const list = Array.isArray(eventValue) ? eventValue : [eventValue];
+
+        for (const event of list) {
+            feats.push(await CoTParser.to_geojson(new CoT({ event: event as RawEvent })));
         }
 
         return feats;

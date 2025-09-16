@@ -1,5 +1,5 @@
+import { describe, it, expect } from 'vitest';
 import './setup.js';
-import test from 'tape';
 
 import TAK, { CoT, type TAKTransport, type TransportFactory } from '../index.js';
 
@@ -28,28 +28,28 @@ class FakeTransport implements TAKTransport {
     }
 }
 
-test('TAK uses injected transport factory', async (t) => {
-    const transport = new FakeTransport();
-    const factory: TransportFactory = () => transport;
+describe('injected transport', () => {
+    it('uses custom transport factory', async () => {
+        const transport = new FakeTransport();
+        const factory: TransportFactory = () => transport;
 
-    const tak = await TAK.connect(
-        new URL('ssl://example.com:8089'),
-        {
-            cert: 'fake-cert',
-            key: 'fake-key',
-        },
-        { transportFactory: factory }
-    );
+        const tak = await TAK.connect(
+            new URL('ssl://example.com:8089'),
+            {
+                cert: 'fake-cert',
+                key: 'fake-key',
+            },
+            { transportFactory: factory }
+        );
 
-    t.equal(transport.connectCalls, 1, 'transport connect called once');
+        expect(transport.connectCalls).toBe(1);
 
-    await tak.write([CoT.ping()]);
-    await new Promise((resolve) => setTimeout(resolve, 10));
+        await tak.write([CoT.ping()]);
+        await new Promise((resolve) => setTimeout(resolve, 10));
 
-    t.ok(transport.sendPayloads.length > 0, 'transport received queued writes');
+        expect(transport.sendPayloads.length).toBeGreaterThan(0);
 
-    tak.destroy();
-    t.ok(transport.destroyed, 'transport destroyed on tak.destroy');
-
-    t.end();
+        tak.destroy();
+        expect(transport.destroyed).toBe(true);
+    });
 });

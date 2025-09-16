@@ -6,8 +6,11 @@ import { isReactNative } from './platform.js';
 import { encodeUtf8, decodeUtf8 } from './utils/encoding.js';
 import type { Dispatcher } from 'undici';
 
-type AuthRequestOptions = RequestInit & {
+type AuthRequestOptions = Omit<RequestInit, 'headers' | 'body'> & {
+    headers?: Record<string, string>;
+    body?: unknown;
     timeout?: number;
+    nocookies?: boolean;
 };
 
 /**
@@ -28,8 +31,8 @@ export class APIAuth {
 
     }
 
-    async fetch(api: TAKAPI, url: URL, opts: AuthRequestOptions = {}): Promise<any> {
-        return await fetch(url, opts);
+    async fetch(api: TAKAPI, url: URL, opts: AuthRequestOptions = {}): Promise<unknown> {
+        return await fetch(url, opts as RequestInit);
     }
 }
 
@@ -54,7 +57,7 @@ export class APIAuthPassword extends APIAuth {
         this.jwt = token;
     }
 
-    async fetch(api: TAKAPI, url: URL, opts: AuthRequestOptions = {}): Promise<any> {
+    async fetch(api: TAKAPI, url: URL, opts: AuthRequestOptions = {}): Promise<unknown> {
         const init: AuthRequestOptions = { ...opts };
         const headers = mergeHeaders(init.headers);
 
@@ -64,9 +67,9 @@ export class APIAuthPassword extends APIAuth {
             headers.set('Authorization', `Bearer ${this.jwt}`);
         }
 
-        init.headers = headers;
+        init.headers = headersToObject(headers);
 
-        return await fetch(url, init);
+        return await fetch(url, init as RequestInit);
     }
 }
 
@@ -78,7 +81,7 @@ export class APIAuthToken extends APIAuth {
         this.jwt = jwt;
     }
 
-    async fetch(api: TAKAPI, url: URL, opts: AuthRequestOptions = {}): Promise<any> {
+    async fetch(api: TAKAPI, url: URL, opts: AuthRequestOptions = {}): Promise<unknown> {
         const init: AuthRequestOptions = { ...opts };
         const headers = mergeHeaders(init.headers);
 
@@ -88,11 +91,11 @@ export class APIAuthToken extends APIAuth {
             headers.set('Authorization', `Bearer ${this.jwt}`);
         }
 
-        init.headers = headers;
+        init.headers = headersToObject(headers);
 
         console.error('OPTIONS', headersToObject(headers));
 
-        return await fetch(url, init);
+        return await fetch(url, init as RequestInit);
     }
 }
 
@@ -106,7 +109,7 @@ export class APIAuthCertificate extends APIAuth {
         this.key = key;
     }
 
-    async fetch(api: TAKAPI, url: URL, opts: AuthRequestOptions = {}): Promise<any> {
+    async fetch(api: TAKAPI, url: URL, opts: AuthRequestOptions = {}): Promise<unknown> {
         if (isReactNative) {
             return await this.reactNativeFetch(api, url, opts);
         }
@@ -114,7 +117,7 @@ export class APIAuthCertificate extends APIAuth {
         return await this.nodeFetch(api, url, opts);
     }
 
-    private async nodeFetch(api: TAKAPI, url: URL, opts: AuthRequestOptions): Promise<any> {
+    private async nodeFetch(api: TAKAPI, url: URL, opts: AuthRequestOptions): Promise<unknown> {
         const { Client } = await import('undici');
         const client = new Client(api.url.origin, {
             connect: {
@@ -157,7 +160,7 @@ export class APIAuthCertificate extends APIAuth {
         };
     }
 
-    private async reactNativeFetch(api: TAKAPI, url: URL, opts: AuthRequestOptions): Promise<any> {
+    private async reactNativeFetch(api: TAKAPI, url: URL, opts: AuthRequestOptions): Promise<unknown> {
         const module = await import('react-native-ssl-pinning');
 
         if (opts.body && typeof opts.body !== 'string') {
@@ -209,15 +212,15 @@ export class APIAuthCertificate extends APIAuth {
     }
 }
 
-function mergeHeaders(init?: HeadersInit): Headers {
-    if (!init) return new Headers();
-    return new Headers(init);
+function mergeHeaders(init?: Record<string, string>): Map<string, string> {
+    const headers = new Map<string, string>();
+    if (!init) return headers;
+    for (const [key, value] of Object.entries(init)) {
+        headers.set(key, value);
+    }
+    return headers;
 }
 
-function headersToObject(headers: Headers): Record<string, string> {
-    const result: Record<string, string> = {};
-    headers.forEach((value, key) => {
-        result[key.toLowerCase()] = value;
-    });
-    return result;
+function headersToObject(headers: Map<string, string>): Record<string, string> {
+    return Object.fromEntries(headers.entries());
 }
