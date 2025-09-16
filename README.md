@@ -83,9 +83,19 @@ _Output Raw JSON where possible_
 | -------- | ----- |
 | `TAK_P12_PASSWORD` | Avoid the P12 Password prompt when using in a script |
 
+## Platform Support
+
+This library supports both **Node.js** and **React Native** environments through automatic platform detection and optimized transport layers.
+
+### Node.js
+Uses native TLS connections via `node:tls` module for optimal performance.
+
+### React Native
+Uses `react-native-tcp-socket` for TLS connections with certificate pinning support via `react-native-ssl-pinning`.
+
 ## SDK Usage Examples
 
-### Basic Streaming COT Usage
+### Node.js Usage
 
 ```js
 import TAK from '@tak-ps/node-tak';
@@ -106,10 +116,57 @@ tak.on('cot', async (cot: CoT) => {
 }).on('error', async (err) => {
     console.error(`Connection Error`);
 });
-
 ```
 
-### Basic API Usage
+### React Native Usage
+
+First, install the required peer dependencies:
+
+```bash
+npm install react-native-tcp-socket react-native-ssl-pinning
+```
+
+For iOS, add to your `Podfile`:
+```ruby
+pod 'react-native-tcp-socket', :path => '../node_modules/react-native-tcp-socket'
+```
+
+Then use the same API - platform detection is automatic:
+
+```js
+import TAK from '@tak-ps/node-tak';
+
+// Same API as Node.js - platform detection is automatic
+const tak = await TAK.connect('ConnectionID', new URL('https://tak-server.com:8089'), {
+    key: conn.auth.key,
+    cert: conn.auth.cert
+});
+
+tak.on('cot', async (cot) => {
+    console.log('COT received:', cot);
+}).on('error', async (err) => {
+    console.error('Connection Error:', err);
+});
+```
+
+### React Native Certificate Management
+
+For React Native, certificates are securely stored using the device keychain:
+
+```js
+import { TAKAPI, APIAuthCertificate } from '@tak-ps/node-tak';
+
+// Certificates are automatically stored securely on device
+const api = await TAKAPI.init(
+    new URL('https://tak-server.com:8443'), 
+    new APIAuthCertificate(auth.cert, auth.key)
+);
+
+const missions = await api.Mission.list({});
+console.log('Missions:', missions);
+```
+
+### Basic API Usage (Both Platforms)
 
 ```js
 import { TAKAPI, APIAuthCertificate } from '@tak-ps/node-tak'
@@ -120,3 +177,43 @@ const missions = await api.Mission.list(req.query);
 
 console.error(missions);
 ```
+
+## React Native Setup
+
+### Required Dependencies
+
+```json
+{
+  "dependencies": {
+    "@tak-ps/node-tak": "^11.8.0",
+    "react-native-tcp-socket": "^6.0.6",
+    "react-native-ssl-pinning": "^1.7.0"
+  }
+}
+```
+
+### Metro Configuration
+
+Add to your `metro.config.js`:
+
+```js
+module.exports = {
+  resolver: {
+    alias: {
+      // Ensure React Native picks up the correct entry point
+      '@tak-ps/node-tak': '@tak-ps/node-tak/dist/index.native.js',
+    },
+  },
+};
+```
+
+### Platform-Specific Features
+
+| Feature | Node.js | React Native |
+|---------|---------|--------------|
+| TLS Connections | ✅ `node:tls` | ✅ `react-native-tcp-socket` |
+| Certificate Auth | ✅ Direct | ✅ Keychain storage |
+| CoT Streaming | ✅ | ✅ |
+| REST API | ✅ | ✅ |
+| File Operations | ✅ | ✅ (limited) |
+| CLI Tools | ✅ | ❌ |
