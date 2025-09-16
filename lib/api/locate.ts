@@ -25,7 +25,7 @@ export default class LocateCommands extends Commands {
             }
         }
 
-        return await this.api.fetch(url, {
+        await this.api.fetch(url, {
             method: 'POST'
         });
     }

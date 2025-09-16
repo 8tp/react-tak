@@ -5,6 +5,26 @@ import Commands, { CommandOutputFormat } from '../commands.js';
 import pem from 'pem';
 import xmljs from 'xml-js';
 
+type NameEntry = {
+    _attributes?: {
+        name?: string;
+        value?: string;
+    };
+};
+
+type CertificateConfig = {
+    nameEntries?: {
+        nameEntry?: NameEntry | NameEntry[];
+    };
+};
+
+type SignResponse = {
+    signedCert: string;
+    signedKey: string;
+    ca0?: string;
+    ca1?: string;
+};
+
 export const CertificateResponse = Type.Object({
     ca: Type.Array(Type.String()),
     cert: Type.String(),
@@ -39,16 +59,23 @@ export default class CredentialCommands extends Commands {
     async generate(): Promise<Static<typeof CertificateResponse>> {
         if (!(this.api.auth instanceof APIAuthPassword)) throw new Error('Must use Password Auth');
 
-        const config: any = xmljs.xml2js(await this.config(), { compact: true });
+        const parsed = xmljs.xml2js(await this.config(), { compact: true }) as Record<string, unknown>;
+        const certificateConfig = parsed['ns2:certificateConfig'] as CertificateConfig | undefined;
+        const nameEntryValue = certificateConfig?.nameEntries?.nameEntry;
+        const entries = Array.isArray(nameEntryValue)
+            ? nameEntryValue
+            : nameEntryValue
+                ? [nameEntryValue]
+                : [];
 
-        let organization = null;
-        let organizationUnit = null;
-        const nameEntries = config['ns2:certificateConfig'].nameEntries;
-        if (nameEntries && nameEntries.nameEntry) {
-            for (const ne of nameEntries.nameEntry) {
-                if (ne._attributes && ne._attributes.name === 'O') organization = ne._attributes.value;
-                if (ne._attributes && ne._attributes.name === 'OU') organizationUnit = ne._attributes.value;
-            }
+        let organization: string | undefined;
+        let organizationUnit: string | undefined;
+
+        for (const entry of entries) {
+            const attrs = entry._attributes;
+            if (!attrs) continue;
+            if (attrs.name === 'O') organization = attrs.value ?? undefined;
+            if (attrs.name === 'OU') organizationUnit = attrs.value ?? undefined;
         }
 
         const createCSR = pem.promisified.createCSR;
@@ -74,7 +101,7 @@ export default class CredentialCommands extends Commands {
                 Authorization: 'Basic ' + btoa(this.api.auth.username + ":" + this.api.auth.password)
             },
             body: keys.csr
-        });
+        }) as SignResponse;
 
         let cert = '-----BEGIN CERTIFICATE-----\n' + res.signedCert;
         if (!res.signedCert.endsWith('\n')) cert = cert + '\n';

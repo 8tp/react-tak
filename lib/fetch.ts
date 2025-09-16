@@ -1,8 +1,31 @@
 import Err from '@openaddresses/batch-error';
 import { Static, TSchema, TUnknown } from "@sinclair/typebox";
 import { TypeCompiler } from "@sinclair/typebox/compiler";
-import { fetch, Response } from 'undici';
-import type { RequestInfo, RequestInit } from 'undici';
+
+type FetchFunction = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+let fetchImpl: FetchFunction | undefined;
+
+async function resolveFetch(): Promise<FetchFunction> {
+    if (fetchImpl) return fetchImpl;
+
+    if (typeof globalThis.fetch === 'function') {
+        fetchImpl = async (input, init) => {
+            const normalized: RequestInfo = input instanceof URL ? input.toString() : input;
+            const result = await (globalThis.fetch as typeof fetch)(normalized, init);
+            return result as Response;
+        };
+        return fetchImpl;
+    }
+
+    const undici = await import('undici');
+    const undiciFetch = undici.fetch as unknown as FetchFunction;
+    fetchImpl = async (input, init) => {
+        const normalized = input instanceof URL ? input.toString() : input;
+        return await undiciFetch(normalized, init);
+    };
+    return fetchImpl;
+}
 
 export class TypedResponse extends Response {
     constructor(response: Response) {
@@ -31,8 +54,10 @@ export class TypedResponse extends Response {
 }
 
 export default async function(
-    input: RequestInfo,
+    input: RequestInfo | URL,
     init?: RequestInit
 ): Promise<TypedResponse> {
-    return new TypedResponse(await fetch(input, init));
+    const fetchFn = await resolveFetch();
+    const response = await fetchFn(input, init);
+    return new TypedResponse(response as Response);
 }

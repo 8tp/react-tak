@@ -1,6 +1,7 @@
 import { Type, Static } from '@sinclair/typebox';
-import { Readable } from 'node:stream';
+import type { Readable } from 'node:stream';
 import Commands from '../commands.js';
+import { encodeUtf8 } from '../utils/encoding.js';
 
 export const ExportInput = Type.Object({
     startTime: Type.String(),
@@ -23,7 +24,7 @@ export default class ExportCommands extends Commands {
         throw new Error('Unsupported Subcommand');
     }
 
-    async export(query: Static<typeof ExportInput>): Promise<Readable> {
+    async export(query: Static<typeof ExportInput>): Promise<Readable | Uint8Array> {
         const url = new URL(`/Marti/ExportMissionKML`, this.api.url);
 
         const params = new URLSearchParams();
@@ -34,11 +35,23 @@ export default class ExportCommands extends Commands {
             }
         }
 
-        const res = await this.api.fetch(url, {
+        const res: any = await this.api.fetch(url, {
             method: 'POST',
             body: params
         }, true);
 
-        return res.body;
+        if (res.body instanceof Uint8Array) return res.body;
+
+        if (res.body) return res.body as Readable;
+
+        if (typeof res.arrayBuffer === 'function') {
+            return new Uint8Array(await res.arrayBuffer());
+        }
+
+        if (typeof res.text === 'function') {
+            return encodeUtf8(await res.text());
+        }
+
+        throw new Error('Unsupported response body type for export');
     }
 }

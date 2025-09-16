@@ -16,6 +16,10 @@
         "sourceMap": true,
         "outDir": "dist",
         "baseUrl": ".",
+        "typeRoots": [
+            "./types",
+            "./node_modules/@types"
+        ],
         "paths": {
             "*": [
                 "node_modules/*"
@@ -24,9 +28,12 @@
     },
     "include": [
         "cli.ts",
-        "index.ts", 
+        "index.ts",
+        "index.node.ts",
+        "index.native.ts",
         "test/**/*.ts",
         "lib/**/*.ts",
-        "lib/schema.json"
+        "lib/schema.json",
+        "types/**/*.d.ts"
     ]
 }
