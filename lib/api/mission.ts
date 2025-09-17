@@ -8,6 +8,8 @@ import { TAKItem, TAKList } from './types.js';
 import { MissionLog } from './mission-log.js';
 import type { Feature } from '@tak-ps/node-cot';
 import Commands, { CommandOutputFormat } from '../commands.js';
+import { encodeUtf8 } from '../utils/encoding.js';
+import { prepareRequestBody, type BinaryLike, type BinaryFetchResponse } from '../utils/binary.js';
 
 type RawEvent = CoT['raw']['event'];
 
@@ -247,15 +249,27 @@ export default class MissionCommands extends Commands {
     async getArchive(
         name: string,
         opts?: Static<typeof MissionOptions>
-    ): Promise<Readable> {
+    ): Promise<Readable | Uint8Array> {
         const url = new URL(`/Marti/api/missions/${this.#encodeName(name)}/archive`, this.api.url);
 
-        const res: any = await this.api.fetch(url, {
+        const res = await this.api.fetch(url, {
             method: 'GET',
             headers: this.#headers(opts),
-        }, true);
+        }, true) as BinaryFetchResponse;
 
-        return res.body;
+        if (res.body instanceof Uint8Array) return res.body;
+
+        if (res.body) return res.body as Readable;
+
+        if (typeof res.arrayBuffer === 'function') {
+            return new Uint8Array(await res.arrayBuffer());
+        }
+
+        if (typeof res.text === 'function') {
+            return encodeUtf8(await res.text());
+        }
+
+        throw new Error('Unsupported response body type for mission archive');
     }
 
     /**
@@ -399,7 +413,7 @@ export default class MissionCommands extends Commands {
     async upload(
         name: string,
         creatorUid: string,
-        body: Readable,
+        body: BinaryLike,
         opts?: Static<typeof MissionOptions>
     ) {
         if (this.#isGUID(name)) name = (await this.getGuid(name, {}, opts)).name;
@@ -407,10 +421,12 @@ export default class MissionCommands extends Commands {
         const url = new URL(`/Marti/api/missions/${this.#encodeName(name)}/contents/missionpackage`, this.api.url);
         url.searchParams.append('creatorUid', creatorUid);
 
+        const requestBody = await prepareRequestBody(body);
+
         return await this.api.fetch(url, {
             method: 'PUT',
             headers: this.#headers(opts),
-            body
+            body: requestBody
         });
     }
 

@@ -4,24 +4,18 @@ import Commands, { CommandOutputFormat } from '../commands.js';
 import { TAKList } from './types.js';
 import { Type, Static } from '@sinclair/typebox';
 import { encodeUtf8 } from '../utils/encoding.js';
+import { isReactNative } from '../platform.js';
+import { prepareFormDataPart, prepareRequestBody, type BinaryLike, type FormDataLike } from '../utils/binary.js';
 
-// Lazy utilities to keep RN bundlers happy
-type Readable = import('node:stream').Readable;
+type FormDataCtor = new (...args: unknown[]) => FormDataLike;
 
-async function toReadable(body: Readable | Buffer): Promise<Readable> {
-    if (typeof Buffer !== 'undefined' && body instanceof Buffer) {
-        const stream = await import('node:stream');
-        return stream.Readable.from(body);
-    }
-    return body as Readable;
-}
-
-async function getFormDataCtor(): Promise<any> {
+async function getFormDataCtor(): Promise<FormDataCtor> {
     // Prefer global FormData (browser/RN)
-    if (typeof FormData !== 'undefined') return FormData as any;
+    if (typeof FormData !== 'undefined') return FormData as unknown as FormDataCtor;
     // Fallback to Node's form-data package
     const mod = await import('form-data');
-    return (mod as unknown as { default: any }).default;
+    const ctorCandidate = (mod as { default?: unknown }).default ?? mod;
+    return ctorCandidate as FormDataCtor;
 }
 
 export const Content = Type.Object({
@@ -149,7 +143,7 @@ export default class FileCommands extends Commands {
         keywords?: string[];
         mimetype?: string;
         groups?: string[];
-    }, body: Readable | Buffer): Promise<string> {
+    }, body: BinaryLike): Promise<string> {
         const url = new URL(`/Marti/sync/missionupload`, this.api.url);
         url.searchParams.append('filename', opts.name)
         url.searchParams.append('creatorUid', opts.creatorUid)
@@ -176,11 +170,18 @@ export default class FileCommands extends Commands {
             }
         }
 
-        const streamBody = await toReadable(body);
-
         const FormDataCtor = await getFormDataCtor();
         const form = new FormDataCtor();
-        form.append('assetfile', streamBody);
+        const part = await prepareFormDataPart(body, {
+            filename: opts.name,
+            contentType: opts.mimetype,
+        });
+
+        if (part.options !== undefined) {
+            form.append('assetfile', part.value, part.options);
+        } else {
+            form.append('assetfile', part.value);
+        }
 
         const res = await this.api.fetch(url, {
             method: 'POST',
@@ -203,7 +204,7 @@ export default class FileCommands extends Commands {
         latitude?: string;
         longitude?: string;
         altitude?: string;
-    }, body: Readable | Buffer): Promise<Static<typeof Content>> {
+    }, body: BinaryLike): Promise<Static<typeof Content>> {
         const url = new URL(`/Marti/sync/upload`, this.api.url);
         url.searchParams.append('name', opts.name)
         url.searchParams.append('keywords', opts.keywords.join(','))
@@ -212,15 +213,17 @@ export default class FileCommands extends Commands {
         if (opts.longitude) url.searchParams.append('longitude', opts.longitude);
         if (opts.latitude) url.searchParams.append('latitude', opts.latitude);
 
-        const streamBody = await toReadable(body);
+        const requestBody = await prepareRequestBody(body, {
+            contentType: opts.contentType ?? mime.getType(opts.name) ?? undefined,
+        });
 
         const res = await this.api.fetch(url, {
             method: 'POST',
             headers: {
                 'Content-Type': opts.contentType ? opts.contentType : mime.getType(opts.name),
-                'Content-Length': opts.contentLength
+                ...(isReactNative ? {} : { 'Content-Length': opts.contentLength })
             },
-            body: streamBody
+            body: requestBody
         });
 
         return JSON.parse(res);

@@ -2,6 +2,7 @@ import { Type, Static } from '@sinclair/typebox';
 import type { Readable } from 'node:stream';
 import Commands from '../commands.js';
 import { encodeUtf8 } from '../utils/encoding.js';
+import type { BinaryFetchResponse } from '../utils/binary.js';
 
 export const ExportInput = Type.Object({
     startTime: Type.String(),
@@ -35,10 +36,10 @@ export default class ExportCommands extends Commands {
             }
         }
 
-        const res: any = await this.api.fetch(url, {
+        const res = await this.api.fetch(url, {
             method: 'POST',
             body: params
-        }, true);
+        }, true) as BinaryFetchResponse;
 
         if (res.body instanceof Uint8Array) return res.body;
 

@@ -1,6 +1,7 @@
 import Err from '@openaddresses/batch-error';
 import { Type, Static } from '@sinclair/typebox';
 import Commands from '../commands.js';
+import { decodeBase64ToString } from '../utils/encoding.js';
 
 export const LoginInput = Type.Object({
     username: Type.String(),
@@ -23,7 +24,7 @@ export default class OAuthCommands extends Commands {
     }
 
     parse(jwt: string): Static<typeof TokenContents>{
-        const split = Buffer.from(jwt, 'base64').toString().split('}').map((ext) => { return ext + '}'});
+        const split = decodeBase64ToString(jwt).split('}').map((ext) => { return ext + '}'});
         if (split.length < 2) throw new Err(500, null, 'Unexpected TAK JWT Format');
         const contents: { sub: string; aud: string; nbf: number; exp: number; iat: number; } = JSON.parse(split[1]);
 

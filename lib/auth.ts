@@ -144,6 +144,26 @@ export class APIAuthCertificate extends APIAuth {
             if (typeof value === 'string') responseHeaders.set(key.toLowerCase(), value);
         }
 
+        let bodyBytesPromise: Promise<Uint8Array> | undefined;
+
+        const getBodyBytes = () => {
+            bodyBytesPromise ??= res.body
+                ? stream2buffer(res.body)
+                : Promise.resolve(new Uint8Array(0));
+            return bodyBytesPromise;
+        };
+
+        const closeClient = () => {
+            void client.close().catch(() => {});
+        };
+
+        if (res.body && typeof (res.body as { on?: unknown }).on === 'function') {
+            res.body.on('end', closeClient);
+            res.body.on('error', closeClient);
+        } else {
+            closeClient();
+        }
+
         return {
             status: res.statusCode,
             body: res.body,
@@ -152,10 +172,14 @@ export class APIAuthCertificate extends APIAuth {
                 get: (key: string) => responseHeaders.get(key.toLowerCase()) ?? null,
             },
             text: async () => {
-                return String(await stream2buffer(res.body));
+                return decodeUtf8(await getBodyBytes());
             },
             json: async () => {
-                return JSON.parse(String(await stream2buffer(res.body)));
+                return JSON.parse(decodeUtf8(await getBodyBytes()));
+            },
+            arrayBuffer: async () => {
+                const bytes = await getBodyBytes();
+                return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
             },
         };
     }
