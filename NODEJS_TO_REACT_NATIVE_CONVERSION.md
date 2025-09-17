@@ -43,10 +43,19 @@ import { Stream } from 'node:stream';
 export default async function stream2buffer(stream: Stream): Promise<Buffer>
 ```
 
-**After**: Type-only import, runtime-agnostic
+**After**: Runtime-agnostic event emitter support returning `Uint8Array`
 ```typescript
-export default async function stream2buffer(stream: any): Promise<Buffer>
+type EventEmitterLike = {
+  on(event: 'data', listener: (chunk: unknown) => void): void;
+  on(event: 'end', listener: () => void): void;
+  on(event: 'error', listener: (error: unknown) => void): void;
+};
+
+export default async function stream2buffer(stream: EventEmitterLike): Promise<Uint8Array> {
+  // Coerces strings/ArrayBuffers/Node Buffers into Uint8Array
+}
 ```
+This avoids bundling `node:stream` in React Native builds and gives both runtimes a shared binary representation.
 
 ### 2. API Export Module (`lib/api/export.ts`)
 **Before**: Direct `Readable` import
@@ -61,47 +70,23 @@ import type { Readable } from 'node:stream';
 async export(): Promise<Readable | Uint8Array>
 ```
 
-### 3. File Operations (`lib/api/files.ts`)
-**Before**: Top-level Node imports
-```typescript
-import FormData from 'form-data';
-import { Readable } from 'node:stream';
-```
+### 3. Binary Utility Layer (`lib/utils/binary.ts`)
+New cross-platform helpers convert between `Readable`, `Uint8Array`, `ArrayBuffer`, `Blob`, and string payloads. These utilities drive both REST uploads and FormData construction without eagerly importing Node modules.
 
-**After**: Lazy-loaded utilities
-```typescript
-// Lazy utilities to keep RN bundlers happy
-type Readable = import('node:stream').Readable;
+### 4. File Operations (`lib/api/files.ts`)
+**Before**: Top-level Node imports and Buffer checks.
 
-async function toReadable(body: Readable | Buffer): Promise<Readable> {
-  if (typeof Buffer !== 'undefined' && body instanceof Buffer) {
-    const stream = await import('node:stream');
-    return stream.Readable.from(body);
-  }
-  return body as Readable;
-}
+**After**: Uses `prepareFormDataPart` and `prepareRequestBody` from `lib/utils/binary.ts`, dynamically loading `form-data` only on Node and emitting `Blob` objects on React Native.
 
-async function getFormDataCtor(): Promise<any> {
-  // Prefer global FormData (browser/RN)
-  if (typeof FormData !== 'undefined') return FormData as any;
-  // Fallback to Node's form-data package
-  const mod = await import('form-data');
-  return (mod as unknown as { default: any }).default;
-}
-```
-
-### 4. Mission Operations (`lib/api/mission.ts`)
+### 5. Mission Operations (`lib/api/mission.ts`)
 **Before**: Direct import
 ```typescript
 import { Readable } from 'node:stream';
 ```
 
-**After**: Type-only import
-```typescript
-import type { Readable } from 'node:stream';
-```
+**After**: Type-only import and shared binary response handling (`Readable | Uint8Array`) for archive downloads and package uploads via the binary utility helpers.
 
-### 5. UUID Generation (`lib/api/video.ts`)
+### 6. UUID Generation (`lib/api/video.ts`)
 **Before**: Node-specific crypto
 ```typescript
 import { randomUUID } from 'node:crypto';
@@ -122,12 +107,12 @@ function createUUID(): string {
 }
 ```
 
-### 6. HTTP Client (`lib/fetch.ts`)
+### 7. HTTP Client (`lib/fetch.ts`)
 Already platform-aware:
 - Uses `globalThis.fetch` when available (React Native/browser)
 - Falls back to `undici` for Node.js environments
 
-### 7. Authentication (`lib/auth.ts`)
+### 8. Authentication (`lib/auth.ts`)
 Already platform-aware:
 - `APIAuthCertificate` class detects platform via `isReactNative`
 - Uses `react-native-ssl-pinning` for React Native certificate auth
@@ -162,10 +147,9 @@ import TAK, { TAKAPI } from '@tak-ps/node-tak';
 
 ## Testing Strategy
 
-All existing tests continue to pass in Node.js environment:
-- `test/default.test.ts` - Basic export validation
-- `test/findCoT.test.ts` - CoT parsing functionality
-- `test/transport.test.ts` - Transport abstraction with mock injection
+- Node.js behaviour remains covered by existing Vitest suites (`test/default.test.ts`, `test/findCoT.test.ts`, `test/transport.test.ts`).
+- React Native code paths are validated with `test/react-native.test.ts`, which mocks `isReactNative`, `react-native-ssl-pinning`, and Blob handling.
+- Run the full suite with `ROLLUP_SKIP_NATIVE=true npm test` to skip optional Rollup native bindings during Vitest runs.
 
 ## Risk Assessment
 
@@ -198,9 +182,9 @@ All existing tests continue to pass in Node.js environment:
 ## Future Enhancements
 
 1. **Enhanced Error Messages**: Better error reporting when RN dependencies missing
-2. **TypeScript Strict Mode**: Address remaining `any` types with proper interfaces
-3. **Testing Coverage**: Add React Native-specific test scenarios
-4. **Documentation**: Expand React Native setup and configuration guides
+2. **TypeScript Strict Mode**: Continue tightening typings around mission/file payloads
+3. **Testing Coverage**: Expand React Native fixtures to cover streaming transports end-to-end
+4. **Documentation**: Capture real-world RN integration tips (Metro caching, Hermes, CI builds)
 
 ## Deployment Checklist
 

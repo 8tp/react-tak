@@ -2,7 +2,7 @@
 <p align=center>Javascript TAK Server Library</p>
 
 Lightweight JavaScript library for managing TAK TLS connections for streaming CoT data
-as well as a typed SDK for performing TAK Server REST API operations
+as well as a typed SDK for performing TAK Server REST API operations across **Node.js** and **React Native**.
 
 ## API Documentation
 
@@ -91,7 +91,7 @@ This library supports both **Node.js** and **React Native** environments through
 Uses native TLS connections via `node:tls` module for optimal performance.
 
 ### React Native
-Uses `react-native-tcp-socket` for TLS connections with certificate pinning support via `react-native-ssl-pinning`.
+Uses `react-native-tcp-socket` for TLS connections with certificate pinning support via `react-native-ssl-pinning`. Binary payloads and FormData bodies are automatically normalized for React Native uploads.
 
 ## SDK Usage Examples
 
@@ -131,7 +131,7 @@ For iOS, add to your `Podfile`:
 pod 'react-native-tcp-socket', :path => '../node_modules/react-native-tcp-socket'
 ```
 
-Then use the same API - platform detection is automatic:
+Then use the same API – platform detection is automatic:
 
 ```js
 import TAK from '@tak-ps/node-tak';
@@ -200,7 +200,7 @@ Add to your `metro.config.js`:
 module.exports = {
   resolver: {
     alias: {
-      // Ensure React Native picks up the correct entry point
+      // Optional: Metro already respects the "react-native" export, but aliases help older tooling.
       '@tak-ps/node-tak': '@tak-ps/node-tak/dist/index.native.js',
     },
   },
@@ -215,5 +215,18 @@ module.exports = {
 | Certificate Auth | ✅ Direct | ✅ Keychain storage |
 | CoT Streaming | ✅ | ✅ |
 | REST API | ✅ | ✅ |
-| File Operations | ✅ | ✅ (limited) |
+| File Operations | ✅ | ✅ (Blob-backed uploads/downloads) |
 | CLI Tools | ✅ | ❌ |
+
+## Development & Testing
+
+- Build docs locally with `npm run doc`.
+- Run lint + unit tests (including React Native mocks) with:
+
+  ```bash
+  ROLLUP_SKIP_NATIVE=true npm test
+  ```
+
+  The `ROLLUP_SKIP_NATIVE` flag skips optional native Rollup bindings that Vitest does not require.
+- React Native behaviour is covered by `test/react-native.test.ts`, which mocks `react-native-ssl-pinning` and the RN platform shim.
+- Architecture notes and migration details live in `NODEJS_TO_REACT_NATIVE_CONVERSION.md`.

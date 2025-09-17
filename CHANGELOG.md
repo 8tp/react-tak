@@ -10,6 +10,11 @@
 
 ## Version History
 
+### Unreleased
+
+- :pencil2: Refresh README with React Native testing guidance and binary upload details
+- :white_check_mark: Document React Native Vitest coverage and test command
+
 ### v11.8.0 - 2025-10-11
 
 - :rocket: Include Int Certs in returned CA chain
