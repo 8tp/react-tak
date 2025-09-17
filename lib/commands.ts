@@ -1,7 +1,7 @@
 import { TAKAuth } from './auth.js';
 import type { ParsedArgs } from 'minimist';
 import TAKAPI from './api.js';
-import type { TObject } from '@sinclair/typebox';
+import type { TObject, TSchema } from '@sinclair/typebox';
 import { Type } from '@sinclair/typebox';
 
 export const CommandConfig = Type.Object({
@@ -27,15 +27,17 @@ export enum CommandOutputFormat {
     BINARY = 'binary'
 }
 
+type CommandSchema = {
+    description: string;
+    params: TObject<Record<string, TSchema>>;
+    query: TObject<Record<string, TSchema>>;
+    formats: CommandOutputFormat[];
+};
+
 export default class Commands {
     api: TAKAPI;
 
-    schema: Record<string, {
-        description: string,
-        params: TObject<any>,
-        query: TObject<any>,
-        formats: Array<CommandOutputFormat>
-    }> = {};
+    schema: Record<string, CommandSchema> = {};
 
     constructor(api: TAKAPI) {
         this.api = api;

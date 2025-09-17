@@ -1,4 +1,3 @@
-import FormData from 'form-data';
 import OAuth from './api/oauth.js';
 import Package from './api/package.js';
 import Query from './api/query.js';
@@ -19,6 +18,23 @@ import Video from './api/video.js';
 import Export from './api/export.js';
 import Err from '@openaddresses/batch-error';
 import * as auth from './auth.js';
+
+type HeadersMap = Record<string, string>;
+
+interface FetchOptions extends Omit<RequestInit, 'headers' | 'body'> {
+    headers?: HeadersMap;
+    body?: unknown;
+    nocookies?: boolean;
+}
+
+interface ResponseLike {
+    status: number;
+    headers: {
+        get(name: string): string | null;
+    };
+    text(): Promise<string>;
+    json(): Promise<unknown>;
+}
 
 export const CommandList: Record<string, keyof TAKAPI> = {
     package: 'Package',
@@ -116,49 +132,50 @@ export default class TAKAPI {
      * @param {URL|String} url      - Full URL or API fragment to request
      * @param {Object} [opts={}]    - Options
      */
-    async fetch(url: URL, opts: any = {}, raw=false) {
+    async fetch(url: URL, opts: FetchOptions = {}, raw = false): Promise<unknown> {
         url = this.stdurl(url);
 
         try {
-            if (!opts.headers) opts.headers = {};
+            const headers: HeadersMap = opts.headers ? { ...opts.headers } : {};
+            opts.headers = headers;
 
             if (
                 (isPlainObject(opts.body) || Array.isArray(opts.body))
                 && (
-                    !opts.headers['Content-Type']
-                    || opts.headers['Content-Type'].startsWith('application/json')
+                    !headers['Content-Type']
+                    || headers['Content-Type'].startsWith('application/json')
                 )
             ) {
                 opts.body = JSON.stringify(opts.body);
-                opts.headers['Content-Type'] = 'application/json';
-            } else if (opts.body instanceof FormData) {
+                headers['Content-Type'] = 'application/json';
+            } else if (hasGetHeaders(opts.body)) {
                 opts.headers = opts.body.getHeaders();
             } else if (opts.body instanceof URLSearchParams) {
-                opts.headers['Content-Type'] = 'application/x-www-form-urlencoded'
+                headers['Content-Type'] = 'application/x-www-form-urlencoded';
                 opts.body = String(opts.body);
             }
 
-            const res = await this.auth.fetch(this, url, opts)
+            const res = await this.auth.fetch(this, url, opts);
 
             if (raw) return res;
 
-            let bdy: any = {};
+            const response = res as ResponseLike;
+            let bdy: string | null = null;
 
-            if ((res.status < 200 || res.status >= 400)) {
+            if ((response.status < 200 || response.status >= 400)) {
                 try {
-                    bdy = await res.text();
+                    bdy = await response.text();
                 } catch (err) {
                     console.error(err);
-                    bdy = null;
                 }
 
-                throw new Err(res.status, null, bdy || `Status Code: ${res.status}`);
+                throw new Err(response.status, null, bdy || `Status Code: ${response.status}`);
             }
 
-            if (res.headers.get('content-type') === 'application/json') {
-                return await res.json();
+            if (response.headers.get('content-type') === 'application/json') {
+                return await response.json();
             } else {
-                return await res.text();
+                return await response.text();
             }
         } catch (err) {
             if (err instanceof Error && err.name === 'PublicError') throw err;
@@ -167,6 +184,12 @@ export default class TAKAPI {
     }
 }
 
-function isPlainObject(value: object) {
-    return  value?.constructor === Object;
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return !!value && value.constructor === Object;
+}
+
+function hasGetHeaders(value: unknown): value is { getHeaders: () => HeadersMap } {
+    return typeof value === 'object'
+        && value !== null
+        && typeof (value as { getHeaders?: unknown }).getHeaders === 'function';
 }

@@ -1,9 +1,10 @@
+import { describe, it, expect } from 'vitest';
+import './setup.js';
 import TAK, { CoT } from '../index.js';
-import test from 'tape';
 
-test('Ensure Export', (t) => {
-    t.ok(TAK);
-    t.ok(CoT);
-    t.end();
+describe('Ensure Export', () => {
+    it('exposes TAK and CoT', () => {
+        expect(TAK).toBeTruthy();
+        expect(CoT).toBeTruthy();
+    });
 });
-

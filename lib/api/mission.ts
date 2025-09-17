@@ -3,11 +3,15 @@ import type { ParsedArgs } from 'minimist'
 import CoT, { CoTParser } from '@tak-ps/node-cot';
 import { Type, Static } from '@sinclair/typebox';
 import Err from '@openaddresses/batch-error';
-import { Readable } from 'node:stream'
+import type { Readable } from 'node:stream'
 import { TAKItem, TAKList } from './types.js';
 import { MissionLog } from './mission-log.js';
 import type { Feature } from '@tak-ps/node-cot';
 import Commands, { CommandOutputFormat } from '../commands.js';
+import { encodeUtf8 } from '../utils/encoding.js';
+import { prepareRequestBody, type BinaryLike, type BinaryFetchResponse } from '../utils/binary.js';
+
+type RawEvent = CoT['raw']['event'];
 
 export enum MissionSubscriberRole {
     MISSION_OWNER = 'MISSION_OWNER',
@@ -227,13 +231,13 @@ export default class MissionCommands extends Commands {
         return encodeURIComponent(name.trim())
     }
 
-    #headers(opts?: Static<typeof MissionOptions>): object {
+    #headers(opts?: Static<typeof MissionOptions>): Record<string, string> {
         if (opts && opts.token) {
             return {
                 MissionAuthorization: `Bearer ${opts.token}`
             }
         } else {
-            return {};
+            return {} as Record<string, string>;
         }
     }
 
@@ -245,15 +249,27 @@ export default class MissionCommands extends Commands {
     async getArchive(
         name: string,
         opts?: Static<typeof MissionOptions>
-    ): Promise<Readable> {
+    ): Promise<Readable | Uint8Array> {
         const url = new URL(`/Marti/api/missions/${this.#encodeName(name)}/archive`, this.api.url);
 
         const res = await this.api.fetch(url, {
             method: 'GET',
             headers: this.#headers(opts),
-        }, true);
+        }, true) as BinaryFetchResponse;
 
-        return res.body;
+        if (res.body instanceof Uint8Array) return res.body;
+
+        if (res.body) return res.body as Readable;
+
+        if (typeof res.arrayBuffer === 'function') {
+            return new Uint8Array(await res.arrayBuffer());
+        }
+
+        if (typeof res.text === 'function') {
+            return encodeUtf8(await res.text());
+        }
+
+        throw new Error('Unsupported response body type for mission archive');
     }
 
     /**
@@ -277,12 +293,10 @@ export default class MissionCommands extends Commands {
             }
         }
 
-        const changes = await this.api.fetch(url, {
+        return await this.api.fetch(url, {
             method: 'GET',
             headers: this.#headers(opts),
-        });
-
-        return changes;
+        }) as Static<typeof TAKList_MissionChange>;
     }
 
     /**
@@ -294,13 +308,16 @@ export default class MissionCommands extends Commands {
     ): Promise<Static<typeof Feature.Feature>[]> {
         const feats: Static<typeof Feature.Feature>[] = [];
 
-        const res: any = xmljs.xml2js(await this.latestCots(name, opts), { compact: true });
+        const raw = xmljs.xml2js(await this.latestCots(name, opts), { compact: true }) as Record<string, unknown>;
+        const eventsNode = raw.events as { event?: unknown } | undefined;
+        const eventValue = eventsNode?.event;
 
-        if (!Object.keys(res.events).length) return feats;
-        if (!res.events.event || (Array.isArray(res.events.event) && !res.events.event.length)) return feats;
+        if (!eventValue) return feats;
 
-        for (const event of Array.isArray(res.events.event) ? res.events.event : [res.events.event] ) {
-            feats.push(await CoTParser.to_geojson(new CoT({ event })));
+        const list = Array.isArray(eventValue) ? eventValue : [eventValue];
+
+        for (const event of list) {
+            feats.push(await CoTParser.to_geojson(new CoT({ event: event as RawEvent })));
         }
 
         return feats;
@@ -322,7 +339,7 @@ export default class MissionCommands extends Commands {
         return await this.api.fetch(url, {
             method: 'GET',
             headers: this.#headers(opts)
-        });
+        }) as string;
     }
 
     /**
@@ -396,7 +413,7 @@ export default class MissionCommands extends Commands {
     async upload(
         name: string,
         creatorUid: string,
-        body: Readable,
+        body: BinaryLike,
         opts?: Static<typeof MissionOptions>
     ) {
         if (this.#isGUID(name)) name = (await this.getGuid(name, {}, opts)).name;
@@ -404,10 +421,12 @@ export default class MissionCommands extends Commands {
         const url = new URL(`/Marti/api/missions/${this.#encodeName(name)}/contents/missionpackage`, this.api.url);
         url.searchParams.append('creatorUid', creatorUid);
 
+        const requestBody = await prepareRequestBody(body);
+
         return await this.api.fetch(url, {
             method: 'PUT',
             headers: this.#headers(opts),
-            body
+            body: requestBody
         });
     }
 

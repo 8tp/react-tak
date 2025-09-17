@@ -5,6 +5,8 @@ import CoT, { CoTParser } from '@tak-ps/node-cot';
 import type { Feature } from '@tak-ps/node-cot';
 import Commands from '../commands.js';
 
+type RawEvent = CoT['raw']['event'];
+
 export const HistoryOptions = Type.Object({
     start: Type.Optional(Type.String()),
     end: Type.Optional(Type.String()),
@@ -28,7 +30,7 @@ export default class QueryCommands extends Commands {
 
         const res = await this.api.fetch(url, {
             method: 'GET'
-        }, true);
+        }, true) as { text: () => Promise<string> };
 
         const body = await res.text();
 
@@ -42,13 +44,16 @@ export default class QueryCommands extends Commands {
     async historyFeats(uid: string, opts?: Static<typeof HistoryOptions>): Promise<Array<Static<typeof Feature.Feature>>> {
         const feats: Static<typeof Feature.Feature>[] = [];
 
-        const res: any = xmljs.xml2js(await this.history(uid, opts), { compact: true });
+        const raw = xmljs.xml2js(await this.history(uid, opts), { compact: true }) as Record<string, unknown>;
+        const eventsNode = raw.events as { event?: unknown } | undefined;
+        const eventValue = eventsNode?.event;
 
-        if (!Object.keys(res).length || !Object.keys(res.events).length) return feats;
-        if (!res.events.event || (Array.isArray(res.events.event) && !res.events.event.length)) return feats;
+        if (!eventValue) return feats;
 
-        for (const event of Array.isArray(res.events.event) ? res.events.event : [res.events.event] ) {
-            feats.push(await CoTParser.to_geojson(new CoT({ event })));
+        const list = Array.isArray(eventValue) ? eventValue : [eventValue];
+
+        for (const event of list) {
+            feats.push(await CoTParser.to_geojson(new CoT({ event: event as RawEvent })));
         }
 
         return feats;

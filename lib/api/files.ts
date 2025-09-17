@@ -1,10 +1,22 @@
-import FormData from 'form-data';
 import type { ParsedArgs } from 'minimist'
-import { Readable } from 'node:stream';
 import mime from 'mime';
 import Commands, { CommandOutputFormat } from '../commands.js';
 import { TAKList } from './types.js';
 import { Type, Static } from '@sinclair/typebox';
+import { encodeUtf8 } from '../utils/encoding.js';
+import { isReactNative } from '../platform.js';
+import { prepareFormDataPart, prepareRequestBody, type BinaryLike, type FormDataLike } from '../utils/binary.js';
+
+type FormDataCtor = new (...args: unknown[]) => FormDataLike;
+
+async function getFormDataCtor(): Promise<FormDataCtor> {
+    // Prefer global FormData (browser/RN)
+    if (typeof FormData !== 'undefined') return FormData as unknown as FormDataCtor;
+    // Fallback to Node's form-data package
+    const mod = await import('form-data');
+    const ctorCandidate = (mod as { default?: unknown }).default ?? mod;
+    return ctorCandidate as FormDataCtor;
+}
 
 export const Content = Type.Object({
   UID: Type.String(),
@@ -79,7 +91,7 @@ export default class FileCommands extends Commands {
         return body;
     }
 
-    async download(hash: string): Promise<Readable> {
+    async download(hash: string): Promise<Readable | Uint8Array> {
         const url = new URL(`/Marti/sync/content`, this.api.url);
         url.searchParams.append('hash', hash);
 
@@ -87,7 +99,19 @@ export default class FileCommands extends Commands {
             method: 'GET'
         }, true);
 
-        return res.body;
+        if (res.body instanceof Uint8Array) return res.body;
+
+        if (res.body) return res.body as Readable;
+
+        if (typeof res.arrayBuffer === 'function') {
+            return new Uint8Array(await res.arrayBuffer());
+        }
+
+        if (typeof res.text === 'function') {
+            return encodeUtf8(await res.text());
+        }
+
+        throw new Error('Unsupported response body type for download');
     }
 
     async adminDelete(hash: string) {
@@ -119,7 +143,7 @@ export default class FileCommands extends Commands {
         keywords?: string[];
         mimetype?: string;
         groups?: string[];
-    }, body: Readable | Buffer): Promise<string> {
+    }, body: BinaryLike): Promise<string> {
         const url = new URL(`/Marti/sync/missionupload`, this.api.url);
         url.searchParams.append('filename', opts.name)
         url.searchParams.append('creatorUid', opts.creatorUid)
@@ -146,12 +170,18 @@ export default class FileCommands extends Commands {
             }
         }
 
-        if (body instanceof Buffer) {
-            body = Readable.from(body as Buffer);
-        }
+        const FormDataCtor = await getFormDataCtor();
+        const form = new FormDataCtor();
+        const part = await prepareFormDataPart(body, {
+            filename: opts.name,
+            contentType: opts.mimetype,
+        });
 
-        const form = new FormData()
-        form.append('assetfile', body as Readable);
+        if (part.options !== undefined) {
+            form.append('assetfile', part.value, part.options);
+        } else {
+            form.append('assetfile', part.value);
+        }
 
         const res = await this.api.fetch(url, {
             method: 'POST',
@@ -174,7 +204,7 @@ export default class FileCommands extends Commands {
         latitude?: string;
         longitude?: string;
         altitude?: string;
-    }, body: Readable | Buffer): Promise<Static<typeof Content>> {
+    }, body: BinaryLike): Promise<Static<typeof Content>> {
         const url = new URL(`/Marti/sync/upload`, this.api.url);
         url.searchParams.append('name', opts.name)
         url.searchParams.append('keywords', opts.keywords.join(','))
@@ -183,17 +213,17 @@ export default class FileCommands extends Commands {
         if (opts.longitude) url.searchParams.append('longitude', opts.longitude);
         if (opts.latitude) url.searchParams.append('latitude', opts.latitude);
 
-        if (body instanceof Buffer) {
-            body = Readable.from(body as Buffer);
-        }
+        const requestBody = await prepareRequestBody(body, {
+            contentType: opts.contentType ?? mime.getType(opts.name) ?? undefined,
+        });
 
         const res = await this.api.fetch(url, {
             method: 'POST',
             headers: {
                 'Content-Type': opts.contentType ? opts.contentType : mime.getType(opts.name),
-                'Content-Length': opts.contentLength
+                ...(isReactNative ? {} : { 'Content-Length': opts.contentLength })
             },
-            body: body as Readable
+            body: requestBody
         });
 
         return JSON.parse(res);
