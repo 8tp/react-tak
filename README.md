@@ -1,5 +1,5 @@
 <h1 align=center>Node-TAK</h1>
-<p align=center>Javascript TAK Server Library</p>
+<p align=center>JavaScript TAK Server Library</p>
 
 Lightweight JavaScript library for managing TAK TLS connections for streaming CoT data
 as well as a typed SDK for performing TAK Server REST API operations across **Node.js** and **React Native**.
