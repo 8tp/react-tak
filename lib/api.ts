@@ -36,6 +36,11 @@ interface ResponseLike {
     json(): Promise<unknown>;
 }
 
+export interface FetchResponse extends ResponseLike {
+    body?: unknown;
+    arrayBuffer?: () => Promise<ArrayBuffer>;
+}
+
 export const CommandList: Record<string, keyof TAKAPI> = {
     package: 'Package',
     security: 'Security',
@@ -132,7 +137,9 @@ export default class TAKAPI {
      * @param {URL|String} url      - Full URL or API fragment to request
      * @param {Object} [opts={}]    - Options
      */
-    async fetch(url: URL, opts: FetchOptions = {}, raw = false): Promise<unknown> {
+    async fetch(url: URL, opts: FetchOptions, raw: true): Promise<FetchResponse>;
+    async fetch<T = unknown>(url: URL, opts?: FetchOptions, raw?: false): Promise<T>;
+    async fetch<T = unknown>(url: URL, opts: FetchOptions = {}, raw = false): Promise<T | FetchResponse> {
         url = this.stdurl(url);
 
         try {
@@ -155,11 +162,11 @@ export default class TAKAPI {
                 opts.body = String(opts.body);
             }
 
-            const res = await this.auth.fetch(this, url, opts);
+            const res = await this.auth.fetch(this, url, opts) as FetchResponse;
 
             if (raw) return res;
 
-            const response = res as ResponseLike;
+            const response = res;
             let bdy: string | null = null;
 
             if ((response.status < 200 || response.status >= 400)) {
@@ -172,10 +179,11 @@ export default class TAKAPI {
                 throw new Err(response.status, null, bdy || `Status Code: ${response.status}`);
             }
 
-            if (response.headers.get('content-type') === 'application/json') {
-                return await response.json();
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.startsWith('application/json')) {
+                return await response.json() as T;
             } else {
-                return await response.text();
+                return await response.text() as T;
             }
         } catch (err) {
             if (err instanceof Error && err.name === 'PublicError') throw err;

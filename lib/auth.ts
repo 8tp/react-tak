@@ -1,6 +1,6 @@
 import fetch from './fetch.js';
 import { Type, type Static } from '@sinclair/typebox';
-import TAKAPI from './api.js';
+import TAKAPI, { FetchResponse } from './api.js';
 import stream2buffer  from './stream.js';
 import { isReactNative } from './platform.js';
 import { encodeUtf8, decodeUtf8 } from './utils/encoding.js';
@@ -31,7 +31,7 @@ export class APIAuth {
 
     }
 
-    async fetch(api: TAKAPI, url: URL, opts: AuthRequestOptions = {}): Promise<unknown> {
+    async fetch(api: TAKAPI, url: URL, opts: AuthRequestOptions = {}): Promise<FetchResponse> {
         return await fetch(url, opts as RequestInit);
     }
 }
@@ -57,7 +57,7 @@ export class APIAuthPassword extends APIAuth {
         this.jwt = token;
     }
 
-    async fetch(api: TAKAPI, url: URL, opts: AuthRequestOptions = {}): Promise<unknown> {
+    async fetch(api: TAKAPI, url: URL, opts: AuthRequestOptions = {}): Promise<FetchResponse> {
         const init: AuthRequestOptions = { ...opts };
         const headers = mergeHeaders(init.headers);
 
@@ -81,7 +81,7 @@ export class APIAuthToken extends APIAuth {
         this.jwt = jwt;
     }
 
-    async fetch(api: TAKAPI, url: URL, opts: AuthRequestOptions = {}): Promise<unknown> {
+    async fetch(api: TAKAPI, url: URL, opts: AuthRequestOptions = {}): Promise<FetchResponse> {
         const init: AuthRequestOptions = { ...opts };
         const headers = mergeHeaders(init.headers);
 
@@ -109,7 +109,7 @@ export class APIAuthCertificate extends APIAuth {
         this.key = key;
     }
 
-    async fetch(api: TAKAPI, url: URL, opts: AuthRequestOptions = {}): Promise<unknown> {
+    async fetch(api: TAKAPI, url: URL, opts: AuthRequestOptions = {}): Promise<FetchResponse> {
         if (isReactNative) {
             return await this.reactNativeFetch(api, url, opts);
         }
@@ -117,7 +117,7 @@ export class APIAuthCertificate extends APIAuth {
         return await this.nodeFetch(api, url, opts);
     }
 
-    private async nodeFetch(api: TAKAPI, url: URL, opts: AuthRequestOptions): Promise<unknown> {
+    private async nodeFetch(api: TAKAPI, url: URL, opts: AuthRequestOptions): Promise<FetchResponse> {
         const { Client } = await import('undici');
         const client = new Client(api.url.origin, {
             connect: {
@@ -181,10 +181,10 @@ export class APIAuthCertificate extends APIAuth {
                 const bytes = await getBodyBytes();
                 return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
             },
-        };
+        } as FetchResponse;
     }
 
-    private async reactNativeFetch(api: TAKAPI, url: URL, opts: AuthRequestOptions): Promise<unknown> {
+    private async reactNativeFetch(api: TAKAPI, url: URL, opts: AuthRequestOptions): Promise<FetchResponse> {
         const module = await import('react-native-ssl-pinning');
 
         if (opts.body && typeof opts.body !== 'string') {
@@ -232,7 +232,7 @@ export class APIAuthCertificate extends APIAuth {
                 return buffer;
             },
             body: bodyArray,
-        };
+        } as FetchResponse;
     }
 }
 

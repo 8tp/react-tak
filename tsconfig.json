@@ -11,6 +11,7 @@
         "target": "es2022",
         "lib": ["es2022", "dom"],
         "noImplicitAny": true,
+        "ignoreDeprecations" : "5.0",
         "moduleResolution": "node",
         "resolveJsonModule": true,
         "sourceMap": true,

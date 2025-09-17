@@ -51,7 +51,7 @@ export default class CredentialCommands extends Commands {
 
     async config(): Promise<string> {
         const url = new URL(`/Marti/api/tls/config`, this.api.url);
-        return await this.api.fetch(url, {
+        return await this.api.fetch<string>(url, {
             method: 'GET'
         });
     }
@@ -93,7 +93,7 @@ export default class CredentialCommands extends Commands {
         url.searchParams.append('clientUid', this.api.auth.username + ' (ETL)');
         url.searchParams.append('version', '3');
 
-        const res = await this.api.fetch(url, {
+        const res = await this.api.fetch<SignResponse>(url, {
             method: 'POST',
             nocookies: true,
             headers: {
@@ -101,7 +101,7 @@ export default class CredentialCommands extends Commands {
                 Authorization: 'Basic ' + btoa(this.api.auth.username + ":" + this.api.auth.password)
             },
             body: keys.csr
-        }) as SignResponse;
+        });
 
         let cert = '-----BEGIN CERTIFICATE-----\n' + res.signedCert;
         if (!res.signedCert.endsWith('\n')) cert = cert + '\n';

@@ -85,14 +85,12 @@ export default class MissionLayerCommands extends Commands {
         return GUIDMatch.test(id)
     }
 
-    #headers(opts?: Static<typeof MissionOptions>): object {
-        if (opts && opts.token) {
-            return {
-                MissionAuthorization: `Bearer ${opts.token}`
-            }
-        } else {
-            return {};
+    #headers(opts?: Static<typeof MissionOptions>): Record<string, string> {
+        const headers: Record<string, string> = {};
+        if (opts?.token) {
+            headers.MissionAuthorization = `Bearer ${opts.token}`;
         }
+        return headers;
     }
 
     isEmpty(layer: Static<typeof MissionLayer>): boolean {
@@ -140,14 +138,14 @@ export default class MissionLayerCommands extends Commands {
         if (this.#isGUID(name)) {
             const url = new URL(`/Marti/api/missions/guid/${this.#encodeName(name)}/layers`, this.api.url);
 
-            res = await this.api.fetch(url, {
+            res = await this.api.fetch<Static<typeof TAKList_MissionLayer>>(url, {
                 method: 'GET',
                 headers: this.#headers(opts),
             });
         } else {
             const url = new URL(`/Marti/api/missions/${this.#encodeName(name)}/layers`, this.api.url);
 
-            res = await this.api.fetch(url, {
+            res = await this.api.fetch<Static<typeof TAKList_MissionLayer>>(url, {
                 method: 'GET',
                 headers: this.#headers(opts),
             });
@@ -223,7 +221,7 @@ export default class MissionLayerCommands extends Commands {
                 }
             }
 
-            return await this.api.fetch(url, {
+            return await this.api.fetch<Static<typeof TAKItem_MissionLayer>>(url, {
                 method: 'PUT',
                 headers: this.#headers(opts),
             });
@@ -237,7 +235,7 @@ export default class MissionLayerCommands extends Commands {
                 }
             }
 
-            return await this.api.fetch(url, {
+            return await this.api.fetch<Static<typeof TAKItem_MissionLayer>>(url, {
                 method: 'PUT',
                 headers: this.#headers(opts),
             });

@@ -57,7 +57,7 @@ export default class GroupCommands extends Commands {
             }
         }
 
-        return await this.api.fetch(url, {
+        return await this.api.fetch<Static<typeof TAKList_Group>>(url, {
             method: 'GET'
         });
     }

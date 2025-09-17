@@ -44,7 +44,7 @@ export default class InjectorCommands extends Commands {
     async list(): Promise<Static<typeof TAKList_Injector>> {
         const url = new URL('/Marti/api/injectors/cot/uid', this.api.url);
 
-        return await this.api.fetch(url, {
+        return await this.api.fetch<Static<typeof TAKList_Injector>>(url, {
             method: 'GET'
         });
     }
@@ -57,7 +57,7 @@ export default class InjectorCommands extends Commands {
     async get(uid: string): Promise<Static<typeof TAKList_Injector>> {
         const url = new URL(`/Marti/api/injectors/cot/uid/${encodeURIComponent(uid)}`, this.api.url);
 
-        return await this.api.fetch(url, {
+        return await this.api.fetch<Static<typeof TAKList_Injector>>(url, {
             method: 'GET'
         });
     }
@@ -70,7 +70,7 @@ export default class InjectorCommands extends Commands {
     async create(injector: Static<typeof Injector>): Promise<Static<typeof TAKList_Injector>> {
         const url = new URL('/Marti/api/injectors/cot/uid', this.api.url);
 
-        return await this.api.fetch(url, {
+        return await this.api.fetch<Static<typeof TAKList_Injector>>(url, {
             method: 'POST',
             body: injector
         });
@@ -87,7 +87,7 @@ export default class InjectorCommands extends Commands {
         url.searchParams.append('uid', injector.uid);
         url.searchParams.append('toInject', injector.toInject);
 
-        return await this.api.fetch(url, {
+        return await this.api.fetch<Static<typeof TAKList_Injector>>(url, {
             method: 'DELETE'
         });
     }

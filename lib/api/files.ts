@@ -1,4 +1,5 @@
 import type { ParsedArgs } from 'minimist'
+import type { Readable } from 'node:stream';
 import mime from 'mime';
 import Commands, { CommandOutputFormat } from '../commands.js';
 import { TAKList } from './types.js';
@@ -74,7 +75,7 @@ export default class FileCommands extends Commands {
     async list(): Promise<Static<typeof TAKList_Content>> {
         const url = new URL(`/Marti/api/sync/search`, this.api.url);
 
-        return await this.api.fetch(url, {
+        return await this.api.fetch<Static<typeof TAKList_Content>>(url, {
             method: 'GET'
         });
     }
@@ -99,9 +100,11 @@ export default class FileCommands extends Commands {
             method: 'GET'
         }, true);
 
-        if (res.body instanceof Uint8Array) return res.body;
+        const body = res.body;
 
-        if (res.body) return res.body as Readable;
+        if (body instanceof Uint8Array) return body;
+
+        if (body) return body as Readable;
 
         if (typeof res.arrayBuffer === 'function') {
             return new Uint8Array(await res.arrayBuffer());
@@ -183,10 +186,10 @@ export default class FileCommands extends Commands {
             form.append('assetfile', part.value);
         }
 
-        const res = await this.api.fetch(url, {
+        const res = await this.api.fetch<string>(url, {
             method: 'POST',
             body: form
-        }) as string;
+        });
 
         return res;
     }
@@ -213,26 +216,29 @@ export default class FileCommands extends Commands {
         if (opts.longitude) url.searchParams.append('longitude', opts.longitude);
         if (opts.latitude) url.searchParams.append('latitude', opts.latitude);
 
+        const contentType = opts.contentType ?? mime.getType(opts.name) ?? undefined;
+
         const requestBody = await prepareRequestBody(body, {
-            contentType: opts.contentType ?? mime.getType(opts.name) ?? undefined,
+            contentType,
         });
 
-        const res = await this.api.fetch(url, {
+        const headers: Record<string, string> = {};
+        if (contentType) headers['Content-Type'] = contentType;
+        if (!isReactNative) headers['Content-Length'] = String(opts.contentLength);
+
+        const res = await this.api.fetch<string>(url, {
             method: 'POST',
-            headers: {
-                'Content-Type': opts.contentType ? opts.contentType : mime.getType(opts.name),
-                ...(isReactNative ? {} : { 'Content-Length': opts.contentLength })
-            },
+            headers,
             body: requestBody
         });
 
-        return JSON.parse(res);
+        return JSON.parse(res) as Static<typeof Content>;
     }
 
     async count() {
         const url = new URL('/Marti/api/files/metadata/count', this.api.url);
 
-        return await this.api.fetch(url, {
+        return await this.api.fetch<number>(url, {
             method: 'GET'
         });
     }
@@ -240,7 +246,7 @@ export default class FileCommands extends Commands {
     async config(): Promise<Static<typeof Config>> {
         const url = new URL('/files/api/config', this.api.url);
 
-        return await this.api.fetch(url, {
+        return await this.api.fetch<Static<typeof Config>>(url, {
             method: 'GET'
         });
     }
